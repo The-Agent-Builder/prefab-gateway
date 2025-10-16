@@ -108,7 +108,7 @@ class AuditLog(Base):
     error_message = Column(Text, nullable=True, comment="错误消息")
     
     # 元数据
-    metadata = Column(JSON, nullable=True, comment="额外的元数据（JSON）")
+    extra_metadata = Column(JSON, nullable=True, comment="额外的元数据（JSON）")
     created_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)
     duration_ms = Column(Integer, nullable=True, comment="处理耗时（毫秒）")
 

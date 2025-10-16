@@ -22,7 +22,7 @@ SYNC_DATABASE_URL = (
 # 异步引擎（用于应用运行时）
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=settings.debug,
     pool_pre_ping=True,
     pool_recycle=3600,
 )
@@ -30,7 +30,7 @@ engine = create_async_engine(
 # 同步引擎（用于 Alembic）
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=settings.debug,
     pool_pre_ping=True,
     pool_recycle=3600,
 )
