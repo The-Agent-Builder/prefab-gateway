@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
-from services import spec_cache_service
+from services.spec_cache_service import spec_cache_service
 from app.routers import run, secrets, prefabs, webhooks
 
 # 配置日志
