@@ -29,6 +29,12 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "redis>=5.0.0",
     "python-multipart>=0.0.6",
+    # 数据库相关
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "aiomysql>=0.2.0",  # MySQL 异步驱动
+    "pymysql>=1.1.2",  # MySQL 同步驱动（用于迁移）
+    "cryptography>=41.0.0",  # 用于密钥加密
 ]
 
 [project.optional-dependencies]
@@ -47,6 +53,11 @@ dev = [
 dev = "scripts.start:dev"
 start = "scripts.start:start"
 prod = "scripts.start:prod"
+# 数据库迁移脚本
+db-init = "scripts.db:init_db"
+db-migrate = "scripts.db:migrate"
+db-upgrade = "scripts.db:upgrade"
+db-downgrade = "scripts.db:downgrade"
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -54,7 +65,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "config*", "services*", "models*", "scripts*"]
+include = ["app*", "config*", "services*", "models*", "scripts*", "db*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

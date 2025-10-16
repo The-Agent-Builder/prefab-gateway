@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 30
     
+    # 数据库配置（MySQL）
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 3306
+    DB_USER: str = "prefab_gateway"
+    DB_PASSWORD: str = "change-me-in-production"
+    DB_NAME: str = "prefab_gateway"
+    
+    # 数据加密配置（用于加密用户密钥）
+    ENCRYPTION_KEY: str = "your-32-byte-encryption-key-change-in-production"  # 至少 32 字节
+    
     # Redis 配置（用于 SpecCache）
     redis_host: str = "localhost"
     redis_port: int = 6379
