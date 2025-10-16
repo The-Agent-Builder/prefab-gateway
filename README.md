@@ -48,31 +48,38 @@ Prefab Gateway 是 AI 预制件平台的核心组件，负责：
 ### 前置要求
 
 - Python 3.11+
-- Redis (用于规格缓存)
+- Redis (可选 - 用于规格缓存，未配置时自动使用内存)
 - uv (包管理器)
 
 ### 安装
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/prefab-gateway.git
+git clone https://github.com/The-Agent-Builder/prefab-gateway.git
 cd prefab-gateway
 
 # 安装依赖
 uv sync --dev
 
 # 配置环境变量（可选）
-cp .env.example .env
+# 如果不配置，将使用默认配置（内存模式）
+# cp .env.example .env
 # 编辑 .env 文件
 ```
 
 ### 运行
 
 ```bash
-# 开发模式
-uv run python -m app.main
+# 开发模式（推荐）- 自动重载
+uv run dev
 
-# 或使用 uvicorn
+# 或者直接启动
+uv run start
+
+# 生产模式（多进程）
+uv run prod
+
+# 或手动使用 uvicorn
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
