@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     knative_domain_suffix: str = "prefab.svc.cluster.local"
     knative_namespace: str = "default"
     
+    # Webhook 配置
+    WEBHOOK_SECRET: Optional[str] = None  # 用于验证来自 factory 的 webhook 签名
+    
     # HTTP 客户端配置
     http_timeout: int = 30  # 秒
     http_max_retries: int = 2

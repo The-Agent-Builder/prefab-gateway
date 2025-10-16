@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from services import spec_cache_service
-from app.routers import run, secrets, prefabs
+from app.routers import run, secrets, prefabs, webhooks
 
 # 配置日志
 logging.basicConfig(
@@ -63,6 +63,7 @@ app.add_middleware(
 app.include_router(run.router)
 app.include_router(secrets.router)
 app.include_router(prefabs.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/", tags=["System"])
