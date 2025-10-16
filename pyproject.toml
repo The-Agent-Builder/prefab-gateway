@@ -32,9 +32,10 @@ dependencies = [
     # 数据库相关
     "sqlalchemy>=2.0.0",
     "alembic>=1.12.0",
-    "aiomysql>=0.2.0",  # MySQL 异步驱动
-    "pymysql>=1.1.2",  # MySQL 同步驱动（用于迁移）
-    "cryptography>=41.0.0",  # 用于密钥加密
+    "aiomysql>=0.2.0", # MySQL 异步驱动
+    "pymysql>=1.1.2", # MySQL 同步驱动（用于迁移）
+    "cryptography>=41.0.0", # 用于密钥加密
+    "greenlet>=3.2.4",
 ]
 
 [project.optional-dependencies]

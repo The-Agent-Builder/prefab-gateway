@@ -46,11 +46,12 @@ async def get_current_user(
     )
     
     try:
-        # 解码 JWT
+        # 解码 JWT（需要验证 audience）
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
+            algorithms=[settings.jwt_algorithm],
+            audience='prefab-gateway'  # 验证 audience 字段
         )
         
         user_id: str = payload.get("sub")

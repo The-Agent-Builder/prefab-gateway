@@ -4,9 +4,11 @@
 import logging
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, User
-from services import spec_cache_service
+from app.dependencies.auth import get_current_user, User
+from services.spec_cache_service import spec_cache_service
+from db.session import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,8 @@ router = APIRouter(prefix="/v1/prefabs", tags=["Prefabs"])
 async def get_prefab_spec(
     prefab_id: str,
     version: str,
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     获取预制件的接口规格
@@ -28,11 +31,12 @@ async def get_prefab_spec(
         prefab_id: 预制件 ID
         version: 版本号
         user: 当前用户
+        db: 数据库会话
     
     Returns:
         预制件的 functions 规格
     """
-    spec = await spec_cache_service.get_spec(prefab_id, version)
+    spec = await spec_cache_service.get_spec(prefab_id, version, db)
     
     if not spec:
         logger.warning(f"Spec not found: {prefab_id}@{version}")
@@ -56,7 +60,8 @@ async def cache_prefab_spec(
     prefab_id: str,
     version: str,
     spec: Dict[str, Any],
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> None:
     """
     缓存预制件规格（管理员端点）
@@ -64,6 +69,6 @@ async def cache_prefab_spec(
     这个端点通常由 prefab-factory 在部署完成后调用
     """
     # 简化实现：这里应该检查用户是否有管理员权限
-    await spec_cache_service.set_spec(prefab_id, version, spec)
+    await spec_cache_service.set_spec(prefab_id, version, spec, db)
     logger.info(f"Cached spec for {prefab_id}@{version}")
 
