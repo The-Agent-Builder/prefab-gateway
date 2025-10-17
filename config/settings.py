@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     workspace_root: str = "/mnt/prefab-workspace"  # PVC 挂载路径
     s3_bucket: str = "prefab-outputs"  # S3 存储桶名称（用于上传 OutputFile）
     s3_region: Optional[str] = None  # S3 区域（默认使用环境变量 AWS_REGION）
+    s3_endpoint_url: Optional[str] = None  # S3 自定义 endpoint（用于阿里云 OSS 等 S3 兼容存储）
     
     # 日志配置
     log_level: str = "INFO"

@@ -28,7 +28,9 @@ class FileHandlerService:
     def __init__(
         self, 
         workspace_root: str = "/mnt/prefab-workspace",
-        s3_bucket: Optional[str] = None
+        s3_bucket: Optional[str] = None,
+        s3_endpoint_url: Optional[str] = None,
+        s3_region: Optional[str] = None
     ):
         """
         初始化文件处理服务
@@ -36,10 +38,14 @@ class FileHandlerService:
         Args:
             workspace_root: PVC 挂载路径
             s3_bucket: S3 存储桶名称（用于上传 OutputFile）
+            s3_endpoint_url: S3 自定义 endpoint（用于阿里云 OSS 等 S3 兼容存储）
+            s3_region: S3 区域名称
         """
         self.workspace_root = Path(workspace_root)
         self._cleanup_task = None
         self.s3_bucket = s3_bucket or "prefab-outputs"  # 默认输出桶
+        self.s3_endpoint_url = s3_endpoint_url
+        self.s3_region = s3_region
         
         # 初始化 aioboto3 session
         self.s3_session = aioboto3.Session()
@@ -52,6 +58,8 @@ class FileHandlerService:
         else:
             logger.info(f"File handler initialized with workspace: {self.workspace_root}")
             logger.info(f"S3 output bucket: {self.s3_bucket}")
+            if self.s3_endpoint_url:
+                logger.info(f"S3 custom endpoint: {self.s3_endpoint_url}")
     
     def create_workspace(self, job_id: Optional[str] = None) -> Path:
         """
@@ -213,7 +221,14 @@ class FileHandlerService:
         logger.info(f"[{request_id}] Downloading from S3: {bucket}/{key} -> {local_path}")
         
         try:
-            async with self.s3_session.client('s3') as s3:
+            # 构建 client 参数
+            client_kwargs = {}
+            if self.s3_endpoint_url:
+                client_kwargs['endpoint_url'] = self.s3_endpoint_url
+            if self.s3_region:
+                client_kwargs['region_name'] = self.s3_region
+            
+            async with self.s3_session.client('s3', **client_kwargs) as s3:
                 await s3.download_file(bucket, key, str(local_path))
             
             file_size = local_path.stat().st_size
@@ -253,7 +268,14 @@ class FileHandlerService:
         try:
             file_size = local_path.stat().st_size
             
-            async with self.s3_session.client('s3') as s3:
+            # 构建 client 参数
+            client_kwargs = {}
+            if self.s3_endpoint_url:
+                client_kwargs['endpoint_url'] = self.s3_endpoint_url
+            if self.s3_region:
+                client_kwargs['region_name'] = self.s3_region
+            
+            async with self.s3_session.client('s3', **client_kwargs) as s3:
                 await s3.upload_file(str(local_path), self.s3_bucket, s3_key)
             
             s3_url = f"s3://{self.s3_bucket}/{s3_key}"
@@ -344,6 +366,8 @@ class FileHandlerService:
 # 创建全局单例（从配置文件读取设置）
 file_handler_service = FileHandlerService(
     workspace_root=settings.workspace_root,
-    s3_bucket=settings.s3_bucket
+    s3_bucket=settings.s3_bucket,
+    s3_endpoint_url=settings.s3_endpoint_url,
+    s3_region=settings.s3_region
 )
 

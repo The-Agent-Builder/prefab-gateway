@@ -93,11 +93,47 @@ class Settings(BaseSettings):
 
 ### 6. S3 兼容存储支持
 
-支持任何 S3 兼容的对象存储（阿里云 OSS、MinIO等）：
+#### 6.1 阿里云 OSS 配置（推荐）
+
+阿里云 OSS 完全兼容 S3 协议，配置示例：
 
 ```bash
-# 自定义 endpoint
-export AWS_S3_ENDPOINT_URL="https://oss-cn-hangzhou.aliyuncs.com"
+# 从阿里云控制台获取 AccessKey
+export AWS_ACCESS_KEY_ID="LTAI5t..."           # 替换为你的 AccessKey ID
+export AWS_SECRET_ACCESS_KEY="xxx..."          # 替换为你的 AccessKey Secret
+
+# 指定 OSS 区域和 Endpoint
+export S3_REGION="oss-cn-hangzhou"             # OSS 区域
+export S3_ENDPOINT_URL="https://oss-cn-hangzhou.aliyuncs.com"
+
+# 存储桶名称
+export S3_BUCKET="prefab-outputs"              # 替换为你的 Bucket 名称
+```
+
+**阿里云区域列表**:
+- `oss-cn-hangzhou`: 华东1（杭州）
+- `oss-cn-shanghai`: 华东2（上海）
+- `oss-cn-beijing`: 华北2（北京）
+- `oss-cn-shenzhen`: 华南1（深圳）
+- [更多区域](https://help.aliyun.com/document_detail/31837.html)
+
+#### 6.2 AWS S3 配置
+
+```bash
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_DEFAULT_REGION="us-east-1"
+export S3_BUCKET="prefab-outputs"
+# 不设置 S3_ENDPOINT_URL（使用 AWS 默认）
+```
+
+#### 6.3 MinIO 配置
+
+```bash
+export AWS_ACCESS_KEY_ID="minioadmin"
+export AWS_SECRET_ACCESS_KEY="minioadmin"
+export S3_ENDPOINT_URL="http://minio:9000"
+export S3_BUCKET="prefab-outputs"
 ```
 
 ## 📦 部署步骤
