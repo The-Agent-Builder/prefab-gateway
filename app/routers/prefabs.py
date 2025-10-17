@@ -57,6 +57,8 @@ async def list_prefabs(
     prefabs = []
     for spec in specs:
         spec_data = spec.spec_json if spec.spec_json else {}
+        
+        # 基础信息
         prefab_info = {
             "id": spec.prefab_id,
             "version": spec.version,
@@ -67,8 +69,32 @@ async def list_prefabs(
             "knative_service_url": spec.knative_service_url,
             "functions": spec_data.get("functions", []),
             "deployed_at": spec.deployed_at.isoformat() if spec.deployed_at else None,
-            "updated_at": spec.updated_at.isoformat() if spec.updated_at else None
+            "updated_at": spec.updated_at.isoformat() if spec.updated_at else None,
         }
+        
+        # 元数据（来自 manifest）
+        if "author" in spec_data:
+            prefab_info["author"] = spec_data["author"]
+        if "github_url" in spec_data:
+            prefab_info["github_url"] = spec_data["github_url"]
+        
+        # 密钥需求分析
+        functions = spec_data.get("functions", [])
+        all_secrets = []
+        for func in functions:
+            if "secrets" in func and func["secrets"]:
+                all_secrets.extend(func["secrets"])
+        
+        # 去重密钥
+        unique_secrets = []
+        seen_names = set()
+        for secret in all_secrets:
+            if secret["name"] not in seen_names:
+                unique_secrets.append(secret)
+                seen_names.add(secret["name"])
+        
+        prefab_info["requires_secrets"] = len(unique_secrets) > 0
+        prefab_info["secrets"] = unique_secrets
         
         # 如果部署失败，添加错误信息
         if spec.deployment_status == DeploymentStatus.FAILED and spec.deployment_error:
