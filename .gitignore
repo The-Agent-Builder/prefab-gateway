@@ -62,3 +62,6 @@ uv.lock
 *.temp
 .cache/
 
+# Workspace (local file handling)
+workspace/
+
