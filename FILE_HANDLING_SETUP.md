@@ -54,10 +54,15 @@ export AWS_SECRET_ACCESS_KEY="your-secret-key"
 # AWS 区域（可选，默认从 AWS CLI 配置读取）
 export AWS_DEFAULT_REGION="cn-northwest-1"
 
-# S3 存储桶（可选，通过 config/settings.py 配置）
+# S3 存储桶（可选，默认: prefab-outputs）
 export S3_BUCKET="prefab-outputs"
 
-# PVC 挂载路径（可选）
+# S3 路径前缀（可选，用于共享存储桶时区分项目）
+# 留空: s3://bucket/prefab-outputs/...
+# 设置: s3://bucket/{prefix}/prefab-outputs/...
+export S3_PREFIX="gtplanner"  # 或 "project-a", "team-x" 等
+
+# PVC 挂载路径（可选，默认: /mnt/prefab-workspace）
 export WORKSPACE_ROOT="/mnt/prefab-workspace"
 ```
 
@@ -69,7 +74,48 @@ export WORKSPACE_ROOT="/mnt/prefab-workspace"
 class Settings(BaseSettings):
     workspace_root: str = "/mnt/prefab-workspace"
     s3_bucket: str = "prefab-outputs"
+    s3_prefix: str = ""  # 路径前缀
     s3_region: Optional[str] = None
+    s3_endpoint_url: Optional[str] = None
+```
+
+### 3.1 共享存储桶场景
+
+如果多个项目共享同一个 S3 存储桶，强烈推荐使用 `S3_PREFIX` 区分项目：
+
+**场景 1: 多项目共享桶**
+```bash
+# 项目 A (GTPlanner)
+S3_BUCKET=company-shared-bucket
+S3_PREFIX=gtplanner
+
+# 项目 B (其他项目)
+S3_BUCKET=company-shared-bucket
+S3_PREFIX=project-b
+```
+
+**存储结构**:
+```
+company-shared-bucket/
+├── gtplanner/
+│   └── prefab-outputs/
+│       └── 2025/10/17/...
+├── project-b/
+│   └── prefab-outputs/
+│       └── 2025/10/17/...
+```
+
+**场景 2: 独立存储桶（无需前缀）**
+```bash
+S3_BUCKET=prefab-outputs
+S3_PREFIX=  # 留空
+```
+
+**存储结构**:
+```
+prefab-outputs/
+└── prefab-outputs/
+    └── 2025/10/17/...
 ```
 
 ### 4. S3 文件操作实现
@@ -82,14 +128,99 @@ class Settings(BaseSettings):
   - 错误处理和日志记录
 
 - **`_upload_to_s3()`**: 上传文件从 PVC 到 S3
-  - 生成唯一 S3 key: `outputs/{request_id}/{uuid}.ext`
+  - 生成唯一 S3 key: `prefab-outputs/{year}/{month}/{day}/{request_id}/{uuid}.ext`
+  - 按日期组织，便于管理
   - 异步上传
   - 返回 S3 URL
 
-### 5. S3 URL 格式
+### 5. S3 路径规范
 
-- **InputFile**: `s3://bucket/path/to/file.ext`（前端上传后传递）
-- **OutputFile**: `s3://bucket/outputs/{request_id}/{uuid}.ext`（Gateway 自动生成）
+#### 5.1 OutputFile（Gateway 自动上传）
+
+Gateway 按日期组织输出文件：
+
+**无前缀**:
+```
+s3://bucket/prefab-outputs/{year}/{month}/{day}/{request_id}/{uuid}.ext
+```
+
+**带前缀** (推荐用于共享存储桶):
+```
+s3://bucket/{prefix}/prefab-outputs/{year}/{month}/{day}/{request_id}/{uuid}.ext
+```
+
+**示例**:
+```
+# 独立存储桶
+s3://prefab-outputs/prefab-outputs/2025/10/17/abc123-def456/uuid-xxx.pdf
+
+# 共享存储桶（设置 S3_PREFIX=gtplanner）
+s3://company-bucket/gtplanner/prefab-outputs/2025/10/17/abc123-def456/uuid-xxx.pdf
+```
+
+**优势**:
+- ✅ 按日期分组，便于管理和清理
+- ✅ 避免单个目录文件过多
+- ✅ 支持按时间范围查询
+- ✅ 前缀隔离，多项目安全共享存储桶
+
+#### 5.2 InputFile（前端上传，推荐规范）
+
+**推荐路径结构**:
+
+```
+# 无前缀
+s3://bucket/prefab-inputs/{user_id}/{year}/{month}/{day}/{filename}
+
+# 带前缀（多项目共享桶）
+s3://bucket/{prefix}/prefab-inputs/{user_id}/{year}/{month}/{day}/{filename}
+```
+
+**示例**:
+```
+# 独立存储桶
+s3://prefab-outputs/prefab-inputs/user-123/2025/10/17/document.pdf
+
+# 共享存储桶（GTPlanner 项目）
+s3://company-bucket/gtplanner/prefab-inputs/user-123/2025/10/17/document.pdf
+```
+
+**前端上传示例（GTPlanner-frontend）**:
+
+```typescript
+// 配置（从环境变量读取）
+const S3_BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET;  // 如: "company-bucket"
+const S3_PREFIX = process.env.NEXT_PUBLIC_S3_PREFIX;  // 如: "gtplanner" 或 ""
+
+// 生成 S3 key
+const now = new Date();
+const datePath = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}`;
+
+// 构建完整路径（自动处理前缀）
+const prefix = S3_PREFIX ? `${S3_PREFIX}/` : '';
+const s3Key = `${prefix}prefab-inputs/${userId}/${datePath}/${file.name}`;
+
+// 上传到 S3
+await s3Client.putObject({
+  Bucket: S3_BUCKET,
+  Key: s3Key,
+  Body: file
+});
+
+// 传递给 Gateway
+const s3Url = `s3://${S3_BUCKET}/${s3Key}`;
+// 结果: s3://company-bucket/gtplanner/prefab-inputs/user-123/2025/10/17/file.pdf
+```
+
+**临时文件（可选）**:
+
+如果不需要长期保存，可使用 `temp/` 前缀：
+
+```
+s3://bucket/prefab-inputs/temp/{uuid}/{filename}
+```
+
+然后配置 S3 生命周期策略自动删除 7 天前的文件。
 
 ### 6. S3 兼容存储支持
 

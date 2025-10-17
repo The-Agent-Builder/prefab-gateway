@@ -11,6 +11,7 @@ import logging
 import shutil
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -29,6 +30,7 @@ class FileHandlerService:
         self, 
         workspace_root: str = "/mnt/prefab-workspace",
         s3_bucket: Optional[str] = None,
+        s3_prefix: str = "",
         s3_endpoint_url: Optional[str] = None,
         s3_region: Optional[str] = None
     ):
@@ -38,12 +40,19 @@ class FileHandlerService:
         Args:
             workspace_root: PVC 挂载路径
             s3_bucket: S3 存储桶名称（用于上传 OutputFile）
+            s3_prefix: S3 路径前缀（用于共享存储桶时区分项目）
             s3_endpoint_url: S3 自定义 endpoint（用于阿里云 OSS 等 S3 兼容存储）
             s3_region: S3 区域名称
         """
         self.workspace_root = Path(workspace_root)
         self._cleanup_task = None
         self.s3_bucket = s3_bucket or "prefab-outputs"  # 默认输出桶
+        
+        # 处理 S3 前缀（确保以 / 结尾，除非为空）
+        if s3_prefix and not s3_prefix.endswith('/'):
+            s3_prefix = s3_prefix + '/'
+        self.s3_prefix = s3_prefix
+        
         self.s3_endpoint_url = s3_endpoint_url
         self.s3_region = s3_region
         
@@ -58,6 +67,8 @@ class FileHandlerService:
         else:
             logger.info(f"File handler initialized with workspace: {self.workspace_root}")
             logger.info(f"S3 output bucket: {self.s3_bucket}")
+            if self.s3_prefix:
+                logger.info(f"S3 path prefix: {self.s3_prefix}")
             if self.s3_endpoint_url:
                 logger.info(f"S3 custom endpoint: {self.s3_endpoint_url}")
     
@@ -258,10 +269,14 @@ class FileHandlerService:
         Returns:
             S3 URL (格式: s3://bucket/path/to/file.ext)
         """
-        # 生成唯一的 S3 key
+        # 生成唯一的 S3 key，按日期组织
+        # 格式: {prefix}prefab-outputs/2025/10/17/{request_id}/{uuid}.ext
+        now = datetime.now()
+        date_path = f"{now.year}/{now.month:02d}/{now.day:02d}"
+        
         file_ext = local_path.suffix
         unique_id = str(uuid.uuid4())
-        s3_key = f"outputs/{request_id}/{unique_id}{file_ext}"
+        s3_key = f"{self.s3_prefix}prefab-outputs/{date_path}/{request_id}/{unique_id}{file_ext}"
         
         logger.info(f"[{request_id}] Uploading to S3: {local_path} -> {self.s3_bucket}/{s3_key}")
         
@@ -367,6 +382,7 @@ class FileHandlerService:
 file_handler_service = FileHandlerService(
     workspace_root=settings.workspace_root,
     s3_bucket=settings.s3_bucket,
+    s3_prefix=settings.s3_prefix,
     s3_endpoint_url=settings.s3_endpoint_url,
     s3_region=settings.s3_region
 )
