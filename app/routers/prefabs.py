@@ -57,7 +57,7 @@ async def list_prefabs(
     prefabs = []
     for spec in specs:
         spec_data = spec.spec_json if spec.spec_json else {}
-        prefabs.append({
+        prefab_info = {
             "id": spec.prefab_id,
             "version": spec.version,
             "name": spec_data.get("name", spec.prefab_id),
@@ -68,7 +68,13 @@ async def list_prefabs(
             "functions": spec_data.get("functions", []),
             "deployed_at": spec.deployed_at.isoformat() if spec.deployed_at else None,
             "updated_at": spec.updated_at.isoformat() if spec.updated_at else None
-        })
+        }
+        
+        # 如果部署失败，添加错误信息
+        if spec.deployment_status == DeploymentStatus.FAILED and spec.deployment_error:
+            prefab_info["deployment_error"] = spec.deployment_error
+        
+        prefabs.append(prefab_info)
     
     logger.info(f"Listed {len(prefabs)} prefabs for user {user.user_id}")
     return prefabs

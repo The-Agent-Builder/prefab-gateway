@@ -145,13 +145,19 @@ async def receive_factory_webhook(
     # 处理事件
     try:
         if event_type == "deployment.success":
-            # 更新部署状态为 DEPLOYED
+            # 获取 manifest 数据（从 payload 中）
+            manifest = payload.get("manifest")
+            if not manifest:
+                logger.warning(f"No manifest in webhook payload for {prefab_id}:{version}")
+            
+            # 更新部署状态为 DEPLOYED，保存 manifest
             success = await spec_cache_service.update_deployment_status(
                 prefab_id=prefab_id,
                 version=version,
                 status=DeploymentStatus.DEPLOYED,
                 db=db,
-                knative_service_url=knative_service_url
+                knative_service_url=knative_service_url,
+                manifest=manifest
             )
             
             if success:
@@ -160,24 +166,18 @@ async def receive_factory_webhook(
                 logger.warning(f"Failed to update spec deployment status: {prefab_id}:{version}")
         
         elif event_type == "deployment.failed":
-            # 更新部署状态为 FAILED
+            # 获取失败原因
+            error_message = payload.get("error_message", "Unknown error")
+            
+            # 更新部署状态为 FAILED，保存错误信息
             await spec_cache_service.update_deployment_status(
                 prefab_id=prefab_id,
                 version=version,
                 status=DeploymentStatus.FAILED,
-                db=db
+                db=db,
+                error_message=error_message
             )
-            logger.info(f"Updated spec deployment status: {prefab_id}:{version} → FAILED")
-        
-        elif event_type == "deployment.started":
-            # 更新部署状态为 DEPLOYING
-            await spec_cache_service.update_deployment_status(
-                prefab_id=prefab_id,
-                version=version,
-                status=DeploymentStatus.DEPLOYING,
-                db=db
-            )
-            logger.info(f"Updated spec deployment status: {prefab_id}:{version} → DEPLOYING")
+            logger.info(f"Updated spec deployment status: {prefab_id}:{version} → FAILED: {error_message}")
         
         # 标记事件为已处理
         existing.processed = True

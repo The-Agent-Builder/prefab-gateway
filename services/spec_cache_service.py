@@ -137,7 +137,7 @@ class SpecCacheService:
         spec: Dict[str, Any],
         db: AsyncSession,
         knative_service_url: Optional[str] = None,
-        deployment_status: DeploymentStatus = DeploymentStatus.PENDING,
+        deployment_status: DeploymentStatus = DeploymentStatus.DEPLOYED,
         artifact_url: Optional[str] = None
     ) -> bool:
         """
@@ -278,7 +278,9 @@ class SpecCacheService:
         version: str,
         status: DeploymentStatus,
         db: AsyncSession,
-        knative_service_url: Optional[str] = None
+        knative_service_url: Optional[str] = None,
+        manifest: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None
     ) -> bool:
         """
         更新部署状态（供 webhook 调用）
@@ -289,6 +291,8 @@ class SpecCacheService:
             status: 新的部署状态
             db: 数据库会话
             knative_service_url: Knative 服务地址（可选）
+            manifest: 完整的 manifest.json（deployment.success 时）
+            error_message: 失败原因（deployment.failed 时）
         
         Returns:
             True 如果成功，False 否则
@@ -304,28 +308,49 @@ class SpecCacheService:
             record = result.scalar_one_or_none()
             
             if record:
+                # 更新现有记录
                 record.deployment_status = status
                 record.updated_at = datetime.utcnow()
+                
                 if knative_service_url:
                     record.knative_service_url = knative_service_url
+                
+                if manifest:
+                    record.spec_json = manifest
+                
+                if error_message:
+                    record.deployment_error = error_message
+                
                 if status == DeploymentStatus.DEPLOYED:
                     record.deployed_at = datetime.utcnow()
+                    record.deployment_error = None  # 清除之前的错误
                 
-                await db.commit()
                 logger.info(f"Updated deployment status: {prefab_id}:{version} → {status.value}")
-                
-                # 使 Redis 缓存失效（下次查询时会从数据库重新加载）
-                key = self._make_key(prefab_id, version)
-                if self._use_memory:
-                    self._memory_cache.pop(key, None)
-                else:
-                    if self._redis:
-                        await self._redis.delete(key)
-                
-                return True
             else:
-                logger.warning(f"Spec not found for status update: {prefab_id}:{version}")
-                return False
+                # 创建新记录（首次部署）
+                new_record = PrefabSpec(
+                    prefab_id=prefab_id,
+                    version=version,
+                    spec_json=manifest or {},
+                    knative_service_url=knative_service_url,
+                    deployment_status=status,
+                    deployment_error=error_message,
+                    deployed_at=datetime.utcnow() if status == DeploymentStatus.DEPLOYED else None
+                )
+                db.add(new_record)
+                logger.info(f"Created new spec with status: {prefab_id}:{version} → {status.value}")
+            
+            await db.commit()
+            
+            # 使 Redis 缓存失效（下次查询时会从数据库重新加载）
+            key = self._make_key(prefab_id, version)
+            if self._use_memory:
+                self._memory_cache.pop(key, None)
+            else:
+                if self._redis:
+                    await self._redis.delete(key)
+            
+            return True
                 
         except Exception as e:
             logger.error(f"Error updating deployment status: {e}")

@@ -18,11 +18,8 @@ class SecretStatus(enum.Enum):
 
 class DeploymentStatus(enum.Enum):
     """部署状态"""
-    PENDING = "pending"
-    BUILDING = "building"
-    DEPLOYING = "deploying"
-    DEPLOYED = "deployed"
-    FAILED = "failed"
+    DEPLOYED = "deployed"  # 部署成功，可调用
+    FAILED = "failed"      # 部署失败
 
 
 class UserSecret(Base):
@@ -63,7 +60,8 @@ class PrefabSpec(Base):
     
     # 部署信息
     knative_service_url = Column(String(512), nullable=True, comment="Knative 服务地址")
-    deployment_status = Column(SQLEnum(DeploymentStatus), default=DeploymentStatus.PENDING, nullable=False)
+    deployment_status = Column(SQLEnum(DeploymentStatus), nullable=False, comment="部署状态")
+    deployment_error = Column(Text, nullable=True, comment="部署失败原因")
     
     # 元数据
     artifact_url = Column(String(512), nullable=True, comment="制品 URL（GitHub Release）")
