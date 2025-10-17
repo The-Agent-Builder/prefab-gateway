@@ -101,11 +101,11 @@ async def run_prefabs(
                 request_id
             )
             
-            # Step 7: 构建下游请求（包含 workspace）
+            # Step 7: 构建下游请求（符合 Gateway 标准格式）
             downstream_payload = {
-                "params": processed_inputs,
-                "workspace": str(workspace),
-                "_secrets": resolved_secrets
+                "inputs": processed_inputs,      # 函数输入参数
+                "workspace": str(workspace),     # 文件处理工作空间
+                "_secrets": resolved_secrets     # 密钥配置
             }
             
             # Step 8: 路由与调用
