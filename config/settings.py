@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     http_timeout: int = 30  # 秒
     http_max_retries: int = 2
     
+    # 文件处理和 S3 配置
+    workspace_root: str = "/mnt/prefab-workspace"  # PVC 挂载路径
+    s3_bucket: str = "prefab-outputs"  # S3 存储桶名称（用于上传 OutputFile）
+    s3_region: Optional[str] = None  # S3 区域（默认使用环境变量 AWS_REGION）
+    
     # 日志配置
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

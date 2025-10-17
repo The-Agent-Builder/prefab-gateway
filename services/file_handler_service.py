@@ -14,21 +14,35 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+import aioboto3
+from botocore.exceptions import ClientError
+
+from config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
 class FileHandlerService:
     """文件处理服务"""
     
-    def __init__(self, workspace_root: str = "/mnt/prefab-workspace"):
+    def __init__(
+        self, 
+        workspace_root: str = "/mnt/prefab-workspace",
+        s3_bucket: Optional[str] = None
+    ):
         """
         初始化文件处理服务
         
         Args:
             workspace_root: PVC 挂载路径
+            s3_bucket: S3 存储桶名称（用于上传 OutputFile）
         """
         self.workspace_root = Path(workspace_root)
         self._cleanup_task = None
+        self.s3_bucket = s3_bucket or "prefab-outputs"  # 默认输出桶
+        
+        # 初始化 aioboto3 session
+        self.s3_session = aioboto3.Session()
         
         # 确保根目录存在
         if not self.workspace_root.exists():
@@ -37,6 +51,7 @@ class FileHandlerService:
             self.workspace_root = None
         else:
             logger.info(f"File handler initialized with workspace: {self.workspace_root}")
+            logger.info(f"S3 output bucket: {self.s3_bucket}")
     
     def create_workspace(self, job_id: Optional[str] = None) -> Path:
         """
@@ -94,13 +109,9 @@ class FileHandlerService:
                 s3_url = inputs[param_name]
                 logger.info(f"[{request_id}] Processing InputFile: {param_name} = {s3_url}")
                 
-                # TODO: 实现 S3 下载逻辑
-                # local_path = await self._download_from_s3(s3_url, workspace, param_name)
-                # processed_inputs[param_name] = str(local_path)
-                
-                # 临时：直接传递 S3 URL（待实现）
-                logger.warning(f"[{request_id}] S3 download not implemented yet, passing URL as-is")
-                processed_inputs[param_name] = s3_url
+                # 从 S3 下载到 workspace
+                local_path = await self._download_from_s3(s3_url, workspace, param_name, request_id)
+                processed_inputs[param_name] = str(local_path)
         
         return processed_inputs
     
@@ -141,13 +152,9 @@ class FileHandlerService:
                     logger.error(f"[{request_id}] Output file not found: {local_path}")
                     raise FileNotFoundError(f"Output file not found: {local_path}")
                 
-                # TODO: 实现 S3 上传逻辑
-                # s3_url = await self._upload_to_s3(local_path, request_id)
-                # processed_output[field_name] = s3_url
-                
-                # 临时：返回本地路径（待实现）
-                logger.warning(f"[{request_id}] S3 upload not implemented yet, returning local path")
-                processed_output[field_name] = str(local_path)
+                # 上传到 S3
+                s3_url = await self._upload_to_s3(local_path, request_id)
+                processed_output[field_name] = s3_url
         
         return processed_output
     
@@ -168,30 +175,98 @@ class FileHandlerService:
         except Exception as e:
             logger.error(f"[{request_id}] Failed to cleanup workspace {workspace}: {e}")
     
-    # TODO: 实现 S3 交互方法
-    # async def _download_from_s3(
-    #     self,
-    #     s3_url: str,
-    #     workspace: Path,
-    #     filename: str
-    #     request_id: str
-    # ) -> Path:
-    #     """从 S3 下载文件到 workspace"""
-    #     # 解析 S3 URL: s3://bucket/path/to/file.ext
-    #     # 使用 boto3 下载
-    #     # 返回本地路径
-    #     pass
+    async def _download_from_s3(
+        self,
+        s3_url: str,
+        workspace: Path,
+        param_name: str,
+        request_id: str
+    ) -> Path:
+        """
+        从 S3 下载文件到 workspace
+        
+        Args:
+            s3_url: S3 URL (格式: s3://bucket/path/to/file.ext)
+            workspace: 工作目录
+            param_name: 参数名（用于生成本地文件名）
+            request_id: 请求 ID
+        
+        Returns:
+            本地文件路径
+        """
+        # 解析 S3 URL
+        if not s3_url.startswith("s3://"):
+            raise ValueError(f"Invalid S3 URL: {s3_url}")
+        
+        url_parts = s3_url[5:].split("/", 1)
+        bucket = url_parts[0]
+        key = url_parts[1] if len(url_parts) > 1 else ""
+        
+        if not key:
+            raise ValueError(f"Invalid S3 URL (missing key): {s3_url}")
+        
+        # 生成本地文件路径（保留原文件扩展名）
+        file_ext = Path(key).suffix
+        local_filename = f"input_{param_name}{file_ext}"
+        local_path = workspace / local_filename
+        
+        logger.info(f"[{request_id}] Downloading from S3: {bucket}/{key} -> {local_path}")
+        
+        try:
+            async with self.s3_session.client('s3') as s3:
+                await s3.download_file(bucket, key, str(local_path))
+            
+            file_size = local_path.stat().st_size
+            logger.info(f"[{request_id}] Downloaded successfully: {file_size} bytes")
+            return local_path
+        
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            logger.error(f"[{request_id}] S3 download failed: {error_code} - {e}")
+            raise RuntimeError(f"Failed to download file from S3: {error_code}") from e
+        except Exception as e:
+            logger.error(f"[{request_id}] Unexpected error during S3 download: {e}")
+            raise
     
-    # async def _upload_to_s3(
-    #     self,
-    #     local_path: Path,
-    #     request_id: str
-    # ) -> str:
-    #     """上传文件到 S3"""
-    #     # 生成唯一的 S3 key
-    #     # 使用 boto3 上传
-    #     # 返回 S3 URL
-    #     pass
+    async def _upload_to_s3(
+        self,
+        local_path: Path,
+        request_id: str
+    ) -> str:
+        """
+        上传文件到 S3
+        
+        Args:
+            local_path: 本地文件路径
+            request_id: 请求 ID
+        
+        Returns:
+            S3 URL (格式: s3://bucket/path/to/file.ext)
+        """
+        # 生成唯一的 S3 key
+        file_ext = local_path.suffix
+        unique_id = str(uuid.uuid4())
+        s3_key = f"outputs/{request_id}/{unique_id}{file_ext}"
+        
+        logger.info(f"[{request_id}] Uploading to S3: {local_path} -> {self.s3_bucket}/{s3_key}")
+        
+        try:
+            file_size = local_path.stat().st_size
+            
+            async with self.s3_session.client('s3') as s3:
+                await s3.upload_file(str(local_path), self.s3_bucket, s3_key)
+            
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[{request_id}] Uploaded successfully: {file_size} bytes -> {s3_url}")
+            return s3_url
+        
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            logger.error(f"[{request_id}] S3 upload failed: {error_code} - {e}")
+            raise RuntimeError(f"Failed to upload file to S3: {error_code}") from e
+        except Exception as e:
+            logger.error(f"[{request_id}] Unexpected error during S3 upload: {e}")
+            raise
     
     async def start_cleanup_daemon(
         self,
@@ -266,6 +341,9 @@ class FileHandlerService:
             logger.error(f"Cleanup failed: {e}", exc_info=True)
 
 
-# 创建全局单例
-file_handler_service = FileHandlerService()
+# 创建全局单例（从配置文件读取设置）
+file_handler_service = FileHandlerService(
+    workspace_root=settings.workspace_root,
+    s3_bucket=settings.s3_bucket
+)
 

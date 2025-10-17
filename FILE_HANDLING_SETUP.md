@@ -21,31 +21,83 @@ Gateway 和 Prefab 通过**共享 PVC (ReadWriteMany)** 传递文件：
 - ✅ 创建文件处理服务: `services/file_handler_service.py`
 - ✅ 集成到 `app/routers/run.py`：
   - 创建独立 workspace
-  - 下载 InputFile (TODO: S3 实现)
-  - 上传 OutputFile (TODO: S3 实现)
+  - 下载 InputFile（S3 → PVC）
+  - 上传 OutputFile（PVC → S3）
   - 清理 workspace
 - ✅ 自动清理守护进程（每 5 分钟，清理 1 小时前的目录）
+- ✅ S3 文件操作（使用 aioboto3 异步上传下载）
 
 ### 3. Prefab Runtime
 - ✅ 简化为只处理本地文件
 - ✅ 接收 workspace 参数
 - ✅ 自动注入密钥到环境变量
 
-## 🔧 待实现功能
+## 🔧 S3 配置指南
 
-### S3 文件操作 (标记为 TODO)
+### 1. 安装依赖
 
-在 `services/file_handler_service.py` 中：
+已完成，使用异步 S3 客户端：
+
+```bash
+uv add boto3 aioboto3
+```
+
+### 2. 环境变量配置
+
+Gateway 需要以下环境变量才能访问 S3：
+
+```bash
+# AWS 凭证（必需）
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+
+# AWS 区域（可选，默认从 AWS CLI 配置读取）
+export AWS_DEFAULT_REGION="cn-northwest-1"
+
+# S3 存储桶（可选，通过 config/settings.py 配置）
+export S3_BUCKET="prefab-outputs"
+
+# PVC 挂载路径（可选）
+export WORKSPACE_ROOT="/mnt/prefab-workspace"
+```
+
+### 3. 配置文件
+
+在 `config/settings.py` 中已添加：
 
 ```python
-# TODO: 实现这两个方法
-async def _download_from_s3(self, s3_url, workspace, filename, request_id) -> Path:
-    # 使用 boto3 从 S3 下载文件到 PVC
-    pass
+class Settings(BaseSettings):
+    workspace_root: str = "/mnt/prefab-workspace"
+    s3_bucket: str = "prefab-outputs"
+    s3_region: Optional[str] = None
+```
 
-async def _upload_to_s3(self, local_path, request_id) -> str:
-    # 使用 boto3 上传文件到 S3，返回 S3 URL
-    pass
+### 4. S3 文件操作实现
+
+已在 `services/file_handler_service.py` 中实现：
+
+- **`_download_from_s3()`**: 从 S3 下载文件到 PVC
+  - 解析 `s3://bucket/key` 格式
+  - 异步下载到 workspace
+  - 错误处理和日志记录
+
+- **`_upload_to_s3()`**: 上传文件从 PVC 到 S3
+  - 生成唯一 S3 key: `outputs/{request_id}/{uuid}.ext`
+  - 异步上传
+  - 返回 S3 URL
+
+### 5. S3 URL 格式
+
+- **InputFile**: `s3://bucket/path/to/file.ext`（前端上传后传递）
+- **OutputFile**: `s3://bucket/outputs/{request_id}/{uuid}.ext`（Gateway 自动生成）
+
+### 6. S3 兼容存储支持
+
+支持任何 S3 兼容的对象存储（阿里云 OSS、MinIO等）：
+
+```bash
+# 自定义 endpoint
+export AWS_S3_ENDPOINT_URL="https://oss-cn-hangzhou.aliyuncs.com"
 ```
 
 ## 📦 部署步骤

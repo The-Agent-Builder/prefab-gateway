@@ -36,6 +36,8 @@ dependencies = [
     "pymysql>=1.1.2", # MySQL 同步驱动（用于迁移）
     "cryptography>=41.0.0", # 用于密钥加密
     "greenlet>=3.2.4",
+    "boto3>=1.40.18",
+    "aioboto3>=15.2.0",
 ]
 
 [project.optional-dependencies]
