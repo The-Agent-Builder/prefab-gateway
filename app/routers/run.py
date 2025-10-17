@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import get_current_user, User
 from models import RunRequestPayload, RunResponsePayload, CallResult, CallStatus, ErrorResponse
-from services import vault_service, acl_service, spec_cache_service
+from services import vault_service, acl_service, spec_cache_service, file_handler_service
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ async def run_prefabs(
     for idx, call in enumerate(payload.calls):
         logger.info(f"[{request_id}] Processing call {idx + 1}/{len(payload.calls)}: {call.prefab_id}@{call.version}")
         
+        workspace = None
         try:
             # Step 1: 获取预制件规格
             spec = await spec_cache_service.get_spec(call.prefab_id, call.version)
@@ -81,7 +82,18 @@ async def run_prefabs(
             # Step 3: 权限检查（InputFile）
             await check_input_file_permissions(call.inputs, function_def, user.user_id, request_id)
             
-            # Step 4: 密钥解析
+            # Step 4: 创建工作空间
+            workspace = file_handler_service.create_workspace(f"{request_id}-{idx}")
+            
+            # Step 5: 下载 InputFile 到工作空间
+            processed_inputs = await file_handler_service.download_input_files(
+                function_def,
+                call.inputs,
+                workspace,
+                request_id
+            )
+            
+            # Step 6: 密钥解析
             resolved_secrets = await resolve_secrets(
                 user.user_id,
                 call.prefab_id,
@@ -89,13 +101,14 @@ async def run_prefabs(
                 request_id
             )
             
-            # Step 5: 构建下游请求
+            # Step 7: 构建下游请求（包含 workspace）
             downstream_payload = {
-                "inputs": call.inputs,
+                "params": processed_inputs,
+                "workspace": str(workspace),
                 "_secrets": resolved_secrets
             }
             
-            # Step 6: 路由与调用
+            # Step 8: 路由与调用
             output = await invoke_knative_service(
                 call.prefab_id,
                 call.version,
@@ -104,13 +117,21 @@ async def run_prefabs(
                 request_id
             )
             
-            # Step 7: 响应处理（OutputFile）
-            await handle_output_files(output, function_def, user.user_id, request_id)
+            # Step 9: 上传 OutputFile 到 S3
+            processed_output = await file_handler_service.upload_output_files(
+                function_def,
+                output,
+                workspace,
+                request_id
+            )
+            
+            # Step 10: 响应处理（授予文件所有权）
+            await handle_output_files(processed_output, function_def, user.user_id, request_id)
             
             # 成功
             results.append(CallResult(
                 status=CallStatus.SUCCESS,
-                output=output
+                output=processed_output
             ))
             logger.info(f"[{request_id}] Call {idx + 1} completed successfully")
             
@@ -124,6 +145,10 @@ async def run_prefabs(
                 status=CallStatus.FAILED,
                 error={"message": str(e), "type": type(e).__name__}
             ))
+        finally:
+            # 清理工作空间
+            if workspace:
+                file_handler_service.cleanup_workspace(workspace, request_id)
     
     # 构建响应
     overall_status = "COMPLETED" if all(r.status == CallStatus.SUCCESS for r in results) else "PARTIAL_SUCCESS"

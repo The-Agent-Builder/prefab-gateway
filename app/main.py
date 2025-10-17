@@ -30,12 +30,23 @@ async def lifespan(app: FastAPI):
     # 连接 Redis
     await spec_cache_service.connect()
     
+    # 启动清理守护进程
+    from services import file_handler_service
+    import asyncio
+    cleanup_task = asyncio.create_task(
+        file_handler_service.start_cleanup_daemon(
+            interval_seconds=300,  # 每 5 分钟清理一次
+            max_age_seconds=3600   # 清理 1 小时前的目录
+        )
+    )
+    
     logger.info(f"Prefab Gateway started on {settings.host}:{settings.port}")
     
     yield
     
     # 关闭
     logger.info("Shutting down Prefab Gateway...")
+    cleanup_task.cancel()
     await spec_cache_service.close()
     logger.info("Prefab Gateway stopped")
 
